@@ -9,9 +9,18 @@ export default {
   home: {
     roomIdEmpty: "Room ID can't be empty",
     roomIdInteger: 'Room ID must be positive integer',
+    authCodeEmpty: "Identity code can't be empty",
+    authCodeFormatError: 'Identity code format error',
+
+    unavailableWhenUsingAuthCode: 'Deprecated. Unavailable when using identity code',
+    disabledByServer: 'Disabled by the server',
 
     general: 'General',
+    useAuthCodeWarning: 'Please prioritize the identity code',
+    room: 'Room',
     roomId: 'Room ID',
+    authCode: 'Identity code',
+    howToGetAuthCode: 'How to get identity code',
     showDanmaku: 'Show messages',
     showGift: 'Show Super Chats',
     showGiftName: 'Show gift name',
@@ -31,12 +40,16 @@ export default {
     blockMedalLevel: 'Block medal level lower than',
 
     advanced: 'Advanced',
-    relayMessagesByServer: 'Relay messages by server',
-    autoTranslate: 'Auto translate messages to Japanese (requires relay messages by server)',
+    relayMessagesByServer: 'Relay messages by the server',
+    relayMessagesByServerTip: 'Message path when enabled: Bilibili server -> blivechat server -> your browser. Some advanced features require this to be enabled. It is recommended to enable it only when using blivechat locally, and not when using through a remote server',
+    autoTranslate: 'Auto translate messages to Japanese',
+    requiresRelayMessagesByServer: 'Requires relay messages by the server',
     giftUsernamePronunciation: 'Pronunciation of gift username',
     dontShow: 'None',
     pinyin: 'Pinyin',
     kana: 'Kana',
+    importPresetCss: 'Import the server preset CSS',
+    importPresetCssTip: 'Automatically import the server CSS file: data/custom_public/preset.css',
 
     emoticon: 'Custom Emotes',
     emoticonKeyword: 'Emote Code',
@@ -45,6 +58,8 @@ export default {
     addEmoticon: 'Add emote',
     emoticonFileTooLarge: 'File size is too large. Max size is 1MB',
 
+    urlTooLong: 'The room URL is too long, and will be truncated by Livehime (but not by OBS)',
+    roomUrlUpdated: 'The room URL is updated. Remember to copy it again',
     roomUrl: 'Room URL',
     enterRoom: 'Enter room',
     enterTestRoom: 'Enter test room',
@@ -72,6 +87,7 @@ export default {
     userNames: 'User Names',
     showUserNames: 'Show user names',
     font: 'Font',
+    fontSelectTip: 'You can also input local font name',
     fontSize: 'Font size',
     lineHeight: 'Line height (0 for default)',
     normalColor: 'Normal color',
@@ -81,6 +97,7 @@ export default {
     showBadges: 'Show badges',
     showColon: 'Show colon after name',
     emoticonSize: 'Emoticon size',
+    largeEmoticonSize: 'Large emoticon size',
 
     messages: 'Messages',
     color: 'Color',
@@ -130,8 +147,9 @@ export default {
   },
   help: {
     help: 'Help',
-    p1: '1. Copy the room ID from the Bilibili live room webpage',
-    p2: '2. Enter the room ID into the room ID on the home page. Copy the room URL',
+    p1_1: '1. Copy the identity code (身份码) from this webpage:',
+    p1_2: '. NOTE: DO NOT refresh the identity code, unless it is leaked. Once you refresh the identity code, the old one will be invalid',
+    p2: '2. Enter the identity code into the room configuration on the home page. Copy the room URL',
     p3: '3. Generate styles with the style generator. Copy the CSS',
     p4: '4. Add browser source in OBS',
     p5: '5. Enter the previously copied room URL at URL, and enter the previously copied CSS at custom CSS'

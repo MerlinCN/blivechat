@@ -9,9 +9,18 @@ export default {
   home: {
     roomIdEmpty: 'ルームのIDを空白にすることはできません',
     roomIdInteger: 'ルームは正の整数でなければなりません',
+    authCodeEmpty: 'アイデンティティコードを空白にすることはできません',
+    authCodeFormatError: 'アイデンティティコードの形式エラー',
+
+    unavailableWhenUsingAuthCode: '非推奨です。アイデンティティコードを使用する際に利用できません',
+    disabledByServer: 'サーバーによって無効にされました',
 
     general: '常規',
+    useAuthCodeWarning: 'アイデンティティコードを優先的に使用してください',
+    room: 'ルーム',
     roomId: 'ルームID',
+    authCode: 'アイデンティティコード',
+    howToGetAuthCode: 'アイデンティティコードの取得方法',
     showDanmaku: 'コメントを表示する',
     showGift: 'スーパーチャットと新メンバーを表示する',
     showGiftName: 'ギフト名を表示する',
@@ -32,11 +41,15 @@ export default {
 
     advanced: 'アドバンスド',
     relayMessagesByServer: 'サーバを介してメッセージを転送する',
-    autoTranslate: 'コメントを日本語に翻訳する（サーバを介してメッセージを転送する必要）',
+    relayMessagesByServerTip: '有効になった場合のメッセージパス：Bilibiliサーバー -> blivechatサーバー -> あなたのブラウザー。一部の高度な機能では、これが有効になっている必要があります。blivechatをローカルで使用する場合にのみ有効にすることを推奨します。リモートサーバーを介して使用する場合には、有効にしないようにしてください',
+    autoTranslate: 'コメントを日本語に翻訳する',
+    requiresRelayMessagesByServer: 'サーバを介してメッセージを転送する必要',
     giftUsernamePronunciation: 'スーパーチャットのユーザー名の発音',
     dontShow: '非表示',
     pinyin: 'ピンイン',
     kana: '仮名',
+    importPresetCss: 'サーバープリセットのCSSをインポートする',
+    importPresetCssTip: 'サーバーのCSSファイル「data/custom_public/preset.css」を自動的にインポートする',
 
     emoticon: 'カスタムスタンプ',
     emoticonKeyword: '置き換えるキーワード',
@@ -45,6 +58,8 @@ export default {
     addEmoticon: 'スタンプを追加',
     emoticonFileTooLarge: 'ファイルサイズが大きすぎます。最大サイズは1MBです',
 
+    urlTooLong: 'ルームのURLが長すぎて、直播姬によって切り詰められます（ただし、OBSでは切り詰められません）',
+    roomUrlUpdated: 'ルームのURLが更新されました。再度コピーすることをお忘れなく',
     roomUrl: 'ルームのURL',
     enterRoom: 'ルームに入る',
     enterTestRoom: 'テストルームに入る',
@@ -72,6 +87,7 @@ export default {
     userNames: 'ユーザー名',
     showUserNames: 'ユーザー名を表示する',
     font: 'フォント',
+    fontSelectTip: 'ローカルフォント名も入力することができます',
     fontSize: 'フォントサイズ',
     lineHeight: '行の高さ（0はデフォルト）',
     normalColor: 'ノーマルの色',
@@ -81,6 +97,7 @@ export default {
     showBadges: '勲章を見せる',
     showColon: 'ユーザー名の後にコロンが表示されます',
     emoticonSize: 'スタンプサイズ',
+    largeEmoticonSize: '大きなスタンプサイズ',
 
     messages: 'コメント',
     color: '色',
@@ -130,8 +147,9 @@ export default {
   },
   help: {
     help: 'ヘルプ',
-    p1: '1. ビリビリの生放送ウェブから生放送ルームIDをこぴーする',
-    p2: '2. ホームページでコピーしたIDを入力し、ルームのURLをこぴーする',
+    p1_1: '1. このウェブページからアイデンティティコード（身份码）をコピーして：',
+    p1_2: '。注意：アイデンティティコードは漏洩していない限り、更新しないでください。アイデンティティコードを更新すると、古いコードは無効になります',
+    p2: '2. ホームページに先ほどコピーしたアイデンティティコードを入力して、ルームのURLをこぴーする',
     p3: '3. スタイルジェネレータでお好みのコメント様子を選び、出力したCSSをコピーする',
     p4: '4. OBSでブラウザを新規作成する',
     p5: '5. プロパティでこぴーしたURLを入力し、カスタムCSSでスタイルジェネレータのCSSを入力する'

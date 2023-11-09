@@ -9,9 +9,18 @@ export default {
   home: {
     roomIdEmpty: '房间ID不能为空',
     roomIdInteger: '房间ID必须为正整数',
+    authCodeEmpty: '身份码不能为空',
+    authCodeFormatError: '身份码格式错误',
+
+    unavailableWhenUsingAuthCode: '已过时，使用身份码时不可用',
+    disabledByServer: '已被服务器禁用',
 
     general: '常规',
+    useAuthCodeWarning: '请优先使用身份码',
+    room: '房间',
     roomId: '房间ID',
+    authCode: '身份码',
+    howToGetAuthCode: '如何获取身份码',
     showDanmaku: '显示弹幕',
     showGift: '显示打赏和新舰长',
     showGiftName: '显示礼物名',
@@ -32,11 +41,15 @@ export default {
 
     advanced: '高级',
     relayMessagesByServer: '通过服务器转发消息',
-    autoTranslate: '自动翻译弹幕到日语（需要通过服务器转发消息）',
+    relayMessagesByServerTip: '开启时的消息路径：B站服务器 -> blivechat服务器 -> 你的浏览器。部分高级功能需要开启这个。推荐只在本地使用blivechat时开启，而通过远程服务器使用时不开启',
+    autoTranslate: '自动翻译弹幕到日语',
+    requiresRelayMessagesByServer: '需要通过服务器转发消息',
     giftUsernamePronunciation: '标注打赏用户名读音',
     dontShow: '不显示',
     pinyin: '拼音',
     kana: '日文假名',
+    importPresetCss: '导入服务器预设CSS',
+    importPresetCssTip: '自动导入服务器的CSS文件：data/custom_public/preset.css',
 
     emoticon: '自定义表情',
     emoticonKeyword: '替换关键词',
@@ -45,6 +58,8 @@ export default {
     addEmoticon: '添加表情',
     emoticonFileTooLarge: '文件尺寸太大，最大1MB',
 
+    urlTooLong: '房间URL太长了，会被直播姬截断（OBS不会）',
+    roomUrlUpdated: '房间URL已更新，记得重新复制',
     roomUrl: '房间URL',
     enterRoom: '进入房间',
     enterTestRoom: '进入测试房间',
@@ -72,6 +87,7 @@ export default {
     userNames: '用户名',
     showUserNames: '显示用户名',
     font: '字体',
+    fontSelectTip: '你也可以输入本地字体名',
     fontSize: '字体尺寸',
     lineHeight: '行高（0为默认）',
     normalColor: '普通颜色',
@@ -81,6 +97,7 @@ export default {
     showBadges: '显示勋章',
     showColon: '用户名后显示冒号',
     emoticonSize: '表情大小',
+    largeEmoticonSize: '大表情大小',
 
     messages: '消息',
     color: '颜色',
@@ -130,8 +147,9 @@ export default {
   },
   help: {
     help: '帮助',
-    p1: '1. 从B站直播间网页复制房间ID',
-    p2: '2. 把房间ID输入到首页的房间ID，复制房间URL',
+    p1_1: '1. 从这个页面复制身份码：',
+    p1_2: '。注意：不要刷新身份码，除非你的身份码泄露了，因为刷新身份码会使旧的身份码失效',
+    p2: '2. 把身份码输入到首页的房间配置，复制房间URL',
     p3: '3. 使用样式生成器生成样式，复制CSS',
     p4: '4. 在OBS中添加浏览器源',
     p5: '5. URL处输入之前复制的房间URL，自定义CSS处输入之前复制的CSS'
