@@ -1,4 +1,6 @@
-import axios from 'axios'
+import MD5 from 'crypto-js/md5'
+
+import { apiClient as axios } from '@/api/base'
 
 export function getDefaultMsgHandler() {
   let dummyFunc = () => {}
@@ -11,6 +13,7 @@ export function getDefaultMsgHandler() {
     onUpdateTranslation: dummyFunc,
 
     onFatalError: dummyFunc,
+    onDebugMsg: dummyFunc,
   }
 }
 
@@ -26,6 +29,10 @@ export function processAvatarUrl(avatarUrl) {
 }
 
 export async function getAvatarUrl(uid, username) {
+  if (uid === 0) {
+    return getDefaultAvatarUrl(uid, username)
+  }
+
   let res
   try {
     res = (await axios.get('/api/avatar_url', { params: {
@@ -33,9 +40,22 @@ export async function getAvatarUrl(uid, username) {
       username: username
     } })).data
   } catch {
-    return DEFAULT_AVATAR_URL
+    return getDefaultAvatarUrl(uid, username)
   }
   return res.avatarUrl
+}
+
+export function getDefaultAvatarUrl(uid, username) {
+  let strToHash
+  if (uid !== 0) {
+    strToHash = uid.toString()
+  } else if (username !== '') {
+    strToHash = username
+  } else {
+    return DEFAULT_AVATAR_URL
+  }
+  let idHash = MD5(strToHash).toString()
+  return `//cravatar.cn/avatar/${idHash}?s=256&d=robohash&f=y`
 }
 
 export async function getTextEmoticons() {

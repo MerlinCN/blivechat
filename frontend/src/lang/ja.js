@@ -3,8 +3,13 @@ export default {
     home: 'トップページ',
     stylegen: 'スタイルジェネレータ',
     help: 'ヘルプ',
+    plugins: 'プラグイン',
+    links: 'リンク',
     projectAddress: 'プロジェクトアドレス',
-    giftRecordOfficial: '公式スーパーチャット記録',
+    discussion: '議論',
+    documentation: 'ドキュメンテーション',
+    mall: 'モール',
+    giftRecordOfficial: 'スーパーチャット記録',
   },
   home: {
     roomIdEmpty: 'ルームのIDを空白にすることはできません',
@@ -16,9 +21,9 @@ export default {
     disabledByServer: 'サーバーによって無効にされました',
 
     general: '常規',
-    useAuthCodeWarning: 'アイデンティティコードを優先的に使用してください',
+    useAuthCodeWarning: 'アイデンティティコードを優先的に使用してください。そうしないと、アイコンやユーザー名が表示されません',
     room: 'ルーム',
-    roomId: 'ルームID',
+    roomId: 'ルームID（推奨されません）',
     authCode: 'アイデンティティコード',
     howToGetAuthCode: 'アイデンティティコードの取得方法',
     showDanmaku: 'コメントを表示する',
@@ -40,6 +45,8 @@ export default {
     blockMedalLevel: 'ブロック勲章等級がx未満',
 
     advanced: 'アドバンスド',
+    showDebugMessages: 'デバッグメッセージを表示する',
+    showDebugMessagesTip: 'メッセージが表示されない場合、デバッグのためにこれを有効にすることができます。それ以外の場合は、有効にする必要はありません',
     relayMessagesByServer: 'サーバを介してメッセージを転送する',
     relayMessagesByServerTip: '有効になった場合のメッセージパス：Bilibiliサーバー -> blivechatサーバー -> あなたのブラウザー。一部の高度な機能では、これが有効になっている必要があります。blivechatをローカルで使用する場合にのみ有効にすることを推奨します。リモートサーバーを介して使用する場合には、有効にしないようにしてください',
     autoTranslate: 'コメントを日本語に翻訳する',
@@ -58,11 +65,30 @@ export default {
     addEmoticon: 'スタンプを追加',
     emoticonFileTooLarge: 'ファイルサイズが大きすぎます。最大サイズは1MBです',
 
+    template: 'カスタムHTMLテンプレート',
+    templateHelp: 'ヘルプ',
+    templateHelpContent: `\
+<p>カスタムHTMLテンプレートを使用すると、DOM構造やCSSスタイルを含むフロントエンドページを完全にカスタマイズできます。
+  テンプレートはサードパーティの作者によって開発される場合があり、そのセキュリティと品質はテンプレート作者の責任となります。
+  公開されているテンプレートは<a target="_blank" href="https://github.com/xfgryujk/blivechat/discussions/categories/%E8%87%AA%E5%AE%9A%E4%B9%89html%E6%A8%A1%E6%9D%BF"
+  >GitHub Discussions</a>で入手できます</p>
+<p>テンプレートのインストール方法：解凍したテンプレートディレクトリを「data/custom_public/templates」フォルダに配置し、
+  約10秒待ってからウェブページを更新してください。また、テンプレートURLを直接入力してオンラインテンプレートを使用することもできます</p>
+<p>注意：カスタムテンプレートを変更した場合、OBS内のカスタムCSSは反映されません</p>
+<p><a target="_blank" href="https://github.com/xfgryujk/blivechat/wiki/%E8%87%AA%E5%AE%9A%E4%B9%89HTML%E6%A8%A1%E6%9D%BF"
+  >テンプレート開発ドキュメント</a></p>
+`,
+    templateDefaultTitle: 'デフォルト',
+    templateDefaultDescription: 'YouTube風のテンプレートで、カスタムCSSでスタイルを変更できます。カスタムHTMLテンプレートの機能に慣れていない場合はこれを選択してください。そうでない場合、OBS内のカスタムCSSは反映されません',
+    templateCustomUrlTitle: 'テンプレートURLを入力',
+    templateCustomUrlDescription: 'リストにないテンプレートは、作者が提供するURLをここで手動で入力できます',
+    author: '作者：',
+
     urlTooLong: 'ルームのURLが長すぎて、直播姬によって切り詰められます（ただし、OBSでは切り詰められません）',
     roomUrlUpdated: 'ルームのURLが更新されました。再度コピーすることをお忘れなく',
     roomUrl: 'ルームのURL',
     enterRoom: 'ルームに入る',
-    enterTestRoom: 'テストルームに入る',
+    copyTestRoomUrl: 'テストルームのURLをコピーする',
     exportConfig: 'コンフィグの導出',
     importConfig: 'コンフィグの導入',
 
@@ -70,7 +96,7 @@ export default {
   },
   stylegen: {
     legacy: '古典',
-    lineLike: 'Line風',
+    lineLike: 'LINE風',
 
     light: '明るい',
     dark: '暗い',
@@ -87,7 +113,11 @@ export default {
     userNames: 'ユーザー名',
     showUserNames: 'ユーザー名を表示する',
     font: 'フォント',
-    fontSelectTip: 'ローカルフォント名も入力することができます',
+    fontSelectTip: 'ローカルフォント名も入力することができます。最初にランク付けされたフォントが最初に使用されます',
+    recentFonts: '最近のフォント',
+    presetFonts: 'プリセットフォント',
+    networkFonts: 'ネットワークフォント',
+    localFonts: 'ローカルフォント',
     fontSize: 'フォントサイズ',
     lineHeight: '行の高さ（0はデフォルト）',
     normalColor: 'ノーマルの色',
@@ -102,6 +132,7 @@ export default {
     messages: 'コメント',
     color: '色',
     onNewLine: '新しい行に表示する',
+    messageReverseScroll: '逆方向にスクロールする',
 
     time: '時間',
     showTime: '時間を表示する',
@@ -109,6 +140,7 @@ export default {
     backgrounds: '背景',
     bgColor: '背景色',
     useBarsInsteadOfBg: '背景に代わります',
+    showLargeEmoticonBg: '大きなスタンプの背景を表示する',
     messageBgColor: 'コメント背景色',
     ownerMessageBgColor: 'オーナーコメント背景色',
     moderatorMessageBgColor: '管理者コメント背景色',
@@ -143,6 +175,7 @@ export default {
 
     result: '結果',
     copy: 'コピー',
+    editor: 'エディタ',
     resetConfig: 'デフォルトに戻す'
   },
   help: {
@@ -154,6 +187,9 @@ export default {
     p4: '4. OBSでブラウザを新規作成する',
     p5: '5. プロパティでこぴーしたURLを入力し、カスタムCSSでスタイルジェネレータのCSSを入力する'
   },
+  room: {
+    fatalErrorOccurred: '致命的なエラーが発生しました。ページを手動で更新して再接続してください'
+  },
   chat: {
     moderator: 'モデレーター',
     guardLevel1: '総督',
@@ -162,5 +198,26 @@ export default {
     sendGift: '{giftName}x{num} を贈りました',
     membershipTitle: '新規メンバー',
     tickerMembership: 'メンバー'
-  }
+  },
+  plugins: {
+    plugins: 'プラグイン',
+    help: 'ヘルプ',
+    helpContent: `\
+<p>プラグインは、メッセージの記録、テキスト読み上げ、曲リクエストなど、blivechatにさらなる機能を追加できます。
+  プラグインはサードパーティの作者によって開発される場合があり、セキュリティと品質はプラグイン作者の責任です。
+  いくつかの公開されたプラグインは<a target="_blank" href="https://github.com/xfgryujk/blivechat/discussions/categories/%E6%8F%92%E4%BB%B6"
+  >GitHub Discussions</a>で見つけることができます</p>
+<p>プラグインのインストール方法：抽出されたプラグインディレクトリを「data/plugins」ディレクトリに配置し、blivechatを再起動します</p>
+<p>注意：ほとんどのプラグインは、「サーバを介してメッセージを転送する」オプションを有効にし、メッセージを受信するために
+  ルームに接続する必要があります</p>
+<p><a target="_blank" href="https://www.bilibili.com/video/BV1nZ42187TX/">紹介動画</a></p>
+<p><a target="_blank" href="https://github.com/xfgryujk/blivechat/wiki/%E6%8F%92%E4%BB%B6%E7%B3%BB%E7%BB%9F"
+  >プラグイン開発ドキュメント</a></p>
+`,
+    author: '作者：',
+    disabledByServer: 'プラグインの管理は、サーバーによって無効にされています',
+    admin: '管理',
+    connected: '接続済み',
+    unconnected: '未接続',
+  },
 }

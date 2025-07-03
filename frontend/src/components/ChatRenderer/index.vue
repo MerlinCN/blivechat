@@ -5,7 +5,7 @@
     <ticker class="style-scope yt-live-chat-renderer" :messages.sync="paidMessages" :showGiftName="showGiftName"></ticker>
     <yt-live-chat-item-list-renderer class="style-scope yt-live-chat-renderer" allow-scroll>
       <div ref="scroller" id="item-scroller" class="style-scope yt-live-chat-item-list-renderer animated" @scroll="onScroll">
-        <div ref="itemOffset" id="item-offset" class="style-scope yt-live-chat-item-list-renderer" style="height: 0px;">
+        <div ref="itemOffset" id="item-offset" class="style-scope yt-live-chat-item-list-renderer">
           <div ref="items" id="items" class="style-scope yt-live-chat-item-list-renderer" style="overflow: hidden"
             :style="{ transform: `translateY(${Math.floor(scrollPixelsRemaining)}px)` }"
           >
@@ -17,7 +17,7 @@
                 :authorName="message.authorName"
                 :authorType="message.authorType"
                 :privilegeType="message.privilegeType"
-                :richContent="getShowRichContent(message)"
+                :contentParts="getShowContentParts(message)"
                 :repeated="message.repeated"
               ></text-message>
               <paid-message :key="message.id" v-else-if="message.type === MESSAGE_TYPE_GIFT"
@@ -26,7 +26,8 @@
                 :avatarUrl="message.avatarUrl"
                 :authorName="getShowAuthorName(message)"
                 :price="message.price"
-                :content="getGiftShowContent(message)"
+                :priceText="message.price <= 0 ? getGiftShowNameAndNum(message) : ''"
+                :content="message.price <= 0 ? '' : getGiftShowContent(message)"
               ></paid-message>
               <membership-item :key="message.id" v-else-if="message.type === MESSAGE_TYPE_MEMBER"
                 class="style-scope yt-live-chat-item-list-renderer"
@@ -150,8 +151,9 @@ export default {
     getGiftShowContent(message) {
       return constants.getGiftShowContent(message, this.showGiftName)
     },
+    getGiftShowNameAndNum: constants.getGiftShowNameAndNum,
     getShowContent: constants.getShowContent,
-    getShowRichContent: constants.getShowRichContent,
+    getShowContentParts: constants.getShowContentParts,
     getShowAuthorName: constants.getShowAuthorName,
 
     addMessage(message) {
@@ -190,7 +192,7 @@ export default {
       }
       return false
     },
-    mergeSimilarGift(authorName, price, giftName, num) {
+    mergeSimilarGift(authorName, price, _totalFreeCoin, giftName, num) {
       for (let message of this.iterRecentMessages(5)) {
         if (
           message.type === constants.MESSAGE_TYPE_GIFT
@@ -199,6 +201,7 @@ export default {
         ) {
           this.updateMessage(message.id, { $add: {
             price: price,
+            // totalFreeCoin: totalFreeCoin, // 暂时没用到
             num: num
           } })
           return true
@@ -576,6 +579,7 @@ export default {
 
     maybeResizeScrollContainer() {
       this.$refs.itemOffset.style.height = `${this.$refs.items.clientHeight}px`
+      this.$refs.itemOffset.style.minHeight = `${this.$refs.scroller.clientHeight}px`
       this.maybeScrollToBottom()
     },
     maybeScrollToBottom() {

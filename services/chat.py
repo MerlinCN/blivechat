@@ -2,20 +2,21 @@
 import asyncio
 import enum
 import logging
+import random
 import uuid
 from typing import *
 
 import api.chat
 import api.open_live as api_open_live
+import blcsdk.models as sdk_models
 import blivedm.blivedm as blivedm
 import blivedm.blivedm.models.open_live as dm_open_models
 import blivedm.blivedm.models.web as dm_web_models
-import blivedm.blivedm.utils as dm_utils
 import config
 import services.avatar
-import services.translate
 import services.plugin
-import blcsdk.models as sdk_models
+import services.translate
+import utils.async_io
 import utils.request
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,20 @@ class LiveClientManager:
         )
 
 
-RECONNECT_POLICY = dm_utils.make_linear_retry_policy(1, 2, 10)
+class TooManyRetries(Exception):
+    """重试次数太多"""
+
+
+def _get_reconnect_interval(_retry_count: int, total_retry_count: int):
+    # 防止无限重连的保险措施。30次重连大概会断线500秒，应该够了
+    if total_retry_count > 30:
+        raise TooManyRetries(f'total_retry_count={total_retry_count}')
+
+    # 不用retry_count了，防止意外的连接成功，导致retry_count重置
+    interval = min(1 + (total_retry_count - 1) * 2, 20)
+    # 加上随机延迟，防止同时请求导致雪崩
+    interval += random.uniform(0, 3)
+    return interval
 
 
 class WebLiveClient(blivedm.BLiveClient):
@@ -179,11 +193,10 @@ class WebLiveClient(blivedm.BLiveClient):
         assert room_key.type == RoomKeyType.ROOM_ID
         super().__init__(
             room_key.value,
-            uid=0,
             session=utils.request.http_session,
             heartbeat_interval=self.HEARTBEAT_INTERVAL,
         )
-        self.set_reconnect_policy(RECONNECT_POLICY)
+        self.set_reconnect_policy(_get_reconnect_interval)
 
     @property
     def room_key(self):
@@ -220,7 +233,7 @@ class OpenLiveClient(blivedm.OpenLiveClient):
             session=utils.request.http_session,
             heartbeat_interval=self.HEARTBEAT_INTERVAL,
         )
-        self.set_reconnect_policy(RECONNECT_POLICY)
+        self.set_reconnect_policy(_get_reconnect_interval)
 
     @property
     def room_key(self):
@@ -252,7 +265,10 @@ class OpenLiveClient(blivedm.OpenLiveClient):
             logger.error('_start_game() failed')
             return False
         except api_open_live.BusinessError as e:
-            logger.warning('_start_game() failed')
+            logger.warning(
+                '_start_game() failed, room_id=%s',
+                api_open_live.auth_code_room_id_cache.get(self._room_owner_auth_code, None)
+            )
 
             if e.code == 7007:
                 # 身份码错误
@@ -264,9 +280,21 @@ class OpenLiveClient(blivedm.OpenLiveClient):
                         'type': api.chat.FatalErrorType.AUTH_CODE_ERROR,
                         'msg': str(e)
                     })
+            elif e.code == 7010:
+                # 同一个房间连接数超过上限
+                room = client_room_manager.get_room(self.room_key)
+                if room is not None:
+                    room.send_cmd_data(api.chat.Command.FATAL_ERROR, {
+                        'type': api.chat.FatalErrorType.TOO_MANY_CONNECTIONS,
+                        'msg': str(e)
+                    })
 
             return False
-        return self._parse_start_game(data['data'])
+
+        res = self._parse_start_game(data['data'])
+        if res:
+            api_open_live.auth_code_room_id_cache[self._room_owner_auth_code] = self.room_id
+        return res
 
     async def _end_game(self):
         if self._game_id in (None, ''):
@@ -289,6 +317,14 @@ class OpenLiveClient(blivedm.OpenLiveClient):
             return False
         return True
 
+    def _on_send_game_heartbeat(self):
+        # 加上随机延迟，减少同时请求的概率
+        sleep_time = self._game_heartbeat_interval + random.uniform(-2, 1)
+        self._game_heartbeat_timer_handle = asyncio.get_running_loop().call_later(
+            sleep_time, self._on_send_game_heartbeat
+        )
+        utils.async_io.create_task_with_ref(self._send_game_heartbeat())
+
     async def _send_game_heartbeat(self):
         if self._game_id in (None, ''):
             logger.warning('game=%d _send_game_heartbeat() failed, game_id not found', self._game_id)
@@ -297,11 +333,7 @@ class OpenLiveClient(blivedm.OpenLiveClient):
         # 保存一下，防止await之后game_id改变
         game_id = self._game_id
         try:
-            await api_open_live.request_open_live_or_common_server(
-                api_open_live.GAME_HEARTBEAT_OPEN_LIVE_URL,
-                api_open_live.GAME_HEARTBEAT_COMMON_SERVER_URL,
-                {'game_id': game_id}
-            )
+            await api_open_live.send_game_heartbeat_by_service_or_common_server(game_id)
         except api_open_live.TransportError:
             logger.error('room=%d _send_game_heartbeat() failed', self.room_id)
             return False
@@ -460,17 +492,23 @@ class ClientRoom:
 
 class LiveMsgHandler(blivedm.BaseHandler):
     def on_client_stopped(self, client: LiveClientType, exception: Optional[Exception]):
+        if isinstance(exception, TooManyRetries):
+            room = client_room_manager.get_room(client.room_key)
+            if room is not None:
+                room.send_cmd_data(api.chat.Command.FATAL_ERROR, {
+                    'type': api.chat.FatalErrorType.TOO_MANY_RETRIES,
+                    'msg': 'The connection has lost too many times'
+                })
+
         _live_client_manager.del_live_client(client.room_key)
 
     def _on_danmaku(self, client: WebLiveClient, message: dm_web_models.DanmakuMessage):
-        asyncio.create_task(self.__on_danmaku(client, message))
+        utils.async_io.create_task_with_ref(self.__on_danmaku(client, message))
 
     async def __on_danmaku(self, client: WebLiveClient, message: dm_web_models.DanmakuMessage):
+        # 先异步调用再获取房间，因为返回时房间可能已经不存在了
         avatar_url = message.face
-        if avatar_url != '':
-            services.avatar.update_avatar_cache_if_expired(message.uid, avatar_url)
-        else:
-            # 先异步调用再获取房间，因为返回时房间可能已经不存在了
+        if avatar_url == '':
             avatar_url = await services.avatar.get_avatar_url(message.uid, message.uname)
 
         room = client_room_manager.get_room(client.room_key)
@@ -485,6 +523,11 @@ class LiveMsgHandler(blivedm.BaseHandler):
             author_type = 1  # 舰队
         else:
             author_type = 0
+
+        show_content = message.msg
+        reply_uname = message.extra_dict.get('reply_uname', '')
+        if reply_uname != '':
+            show_content = f'@{reply_uname} {show_content}'
 
         if message.dm_type == 1:
             content_type = api.chat.ContentType.EMOTICON
@@ -514,7 +557,7 @@ class LiveMsgHandler(blivedm.BaseHandler):
             timestamp=int(message.timestamp / 1000),
             author_name=message.uname,
             author_type=author_type,
-            content=message.msg,
+            content=show_content,
             privilege_type=message.privilege_type,
             is_gift_danmaku=bool(message.msg_type),
             author_level=message.user_level,
@@ -525,7 +568,9 @@ class LiveMsgHandler(blivedm.BaseHandler):
             translation=translation,
             content_type=content_type,
             content_type_params=content_type_params,
-            uid=message.uid
+            # 给插件用的字段
+            uid=str(message.uid) if message.uid != 0 else message.uname,
+            medal_name='' if message.medal_room_id != client.room_id else message.medal_name,
         )
         room.send_cmd_data(api.chat.Command.ADD_TEXT, data)
         services.plugin.broadcast_cmd_data(
@@ -539,34 +584,38 @@ class LiveMsgHandler(blivedm.BaseHandler):
         avatar_url = services.avatar.process_avatar_url(message.face)
         services.avatar.update_avatar_cache_if_expired(message.uid, avatar_url)
 
-        # 丢人
-        if message.coin_type != 'gold':
-            return
-
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
 
+        is_paid_gift = message.coin_type == 'gold'
         data = {
             'id': uuid.uuid4().hex,
             'avatarUrl': avatar_url,
             'timestamp': message.timestamp,
             'authorName': message.uname,
-            'totalCoin': message.total_coin,
+            'totalCoin': 0 if not is_paid_gift else message.total_coin,
+            'totalFreeCoin': 0 if is_paid_gift else message.total_coin,
             'giftName': message.gift_name,
             'num': message.num,
-            'uid': message.uid
+            # 给插件用的字段
+            'giftId': message.gift_id,
+            'giftIconUrl': message.gift_img_basic,
+            'uid': str(message.uid) if message.uid != 0 else message.uname,
+            'privilegeType': message.guard_level,
+            'medalLevel': 0 if message.medal_ruid != client.room_owner_uid else message.medal_level,
+            'medalName': '' if message.medal_ruid != client.room_owner_uid else message.medal_name,
         }
         room.send_cmd_data(api.chat.Command.ADD_GIFT, data)
         services.plugin.broadcast_cmd_data(
             sdk_models.Command.ADD_GIFT, data, make_plugin_msg_extra_from_live_client(client)
         )
 
-    def _on_buy_guard(self, client: WebLiveClient, message: dm_web_models.GuardBuyMessage):
-        asyncio.create_task(self.__on_buy_guard(client, message))
+    def _on_user_toast_v2(self, client: WebLiveClient, message: dm_web_models.UserToastV2Message):
+        utils.async_io.create_task_with_ref(self.__on_buy_guard(client, message))
 
     @staticmethod
-    async def __on_buy_guard(client: WebLiveClient, message: dm_web_models.GuardBuyMessage):
+    async def __on_buy_guard(client: WebLiveClient, message: dm_web_models.UserToastV2Message):
         # 先异步调用再获取房间，因为返回时房间可能已经不存在了
         avatar_url = await services.avatar.get_avatar_url(message.uid, message.username)
 
@@ -580,7 +629,13 @@ class LiveMsgHandler(blivedm.BaseHandler):
             'timestamp': message.start_time,
             'authorName': message.username,
             'privilegeType': message.guard_level,
-            'uid': message.uid
+            # 给插件用的字段
+            'num': message.num,
+            'unit': message.unit,
+            'total_coin': message.price * message.num,
+            'uid': str(message.uid) if message.uid != 0 else message.username,
+            'medalLevel': 0,
+            'medalName': '',
         }
         room.send_cmd_data(api.chat.Command.ADD_MEMBER, data)
         services.plugin.broadcast_cmd_data(
@@ -615,7 +670,11 @@ class LiveMsgHandler(blivedm.BaseHandler):
             'price': message.price,
             'content': message.message,
             'translation': translation,
-            'uid': message.uid
+            # 给插件用的字段
+            'uid': str(message.uid) if message.uid != 0 else message.uname,
+            'privilegeType': message.guard_level,
+            'medalLevel': 0 if message.medal_room_id != client.room_id else message.medal_level,
+            'medalName': '' if message.medal_room_id != client.room_id else message.medal_name,
         }
         room.send_cmd_data(api.chat.Command.ADD_SUPER_CHAT, data)
         services.plugin.broadcast_cmd_data(
@@ -623,7 +682,7 @@ class LiveMsgHandler(blivedm.BaseHandler):
         )
 
         if need_translate:
-            asyncio.create_task(self._translate_and_response(
+            utils.async_io.create_task_with_ref(self._translate_and_response(
                 message.message, room.room_key, msg_id, services.translate.Priority.HIGH
             ))
 
@@ -676,19 +735,22 @@ class LiveMsgHandler(blivedm.BaseHandler):
     #
 
     def _on_open_live_danmaku(self, client: OpenLiveClient, message: dm_open_models.DanmakuMessage):
-        avatar_url = message.uface
-        services.avatar.update_avatar_cache_if_expired(message.uid, avatar_url)
-
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
 
-        if message.uid == client.room_owner_uid:
+        if message.open_id == client.room_owner_open_id:
             author_type = 3  # 主播
+        elif message.is_admin:
+            author_type = 2  # 房管
         elif message.guard_level != 0:  # 1总督，2提督，3舰长
             author_type = 1  # 舰队
         else:
             author_type = 0
+
+        show_content = message.msg
+        if message.reply_uname != '':
+            show_content = f'@{message.reply_uname} {show_content}'
 
         if message.dm_type == 1:
             content_type = api.chat.ContentType.EMOTICON
@@ -711,18 +773,20 @@ class LiveMsgHandler(blivedm.BaseHandler):
             translation = ''
 
         data = api.chat.make_text_message_data(
-            avatar_url=avatar_url,
+            avatar_url=services.avatar.process_avatar_url(message.uface),
             timestamp=message.timestamp,
             author_name=message.uname,
             author_type=author_type,
-            content=message.msg,
+            content=show_content,
             privilege_type=message.guard_level,
             medal_level=0 if not message.fans_medal_wearing_status else message.fans_medal_level,
             id_=message.msg_id,
             translation=translation,
             content_type=content_type,
             content_type_params=content_type_params,
-            uid=message.uid
+            # 给插件用的字段
+            uid=message.open_id,
+            medal_name='' if not message.fans_medal_wearing_status else message.fans_medal_name,
         )
         room.send_cmd_data(api.chat.Command.ADD_TEXT, data)
         services.plugin.broadcast_cmd_data(
@@ -730,29 +794,32 @@ class LiveMsgHandler(blivedm.BaseHandler):
         )
 
         if need_translate:
-            asyncio.create_task(self._translate_and_response(message.msg, room.room_key, message.msg_id))
+            utils.async_io.create_task_with_ref(self._translate_and_response(
+                message.msg, room.room_key, message.msg_id
+            ))
 
     def _on_open_live_gift(self, client: OpenLiveClient, message: dm_open_models.GiftMessage):
-        avatar_url = services.avatar.process_avatar_url(message.uface)
-        services.avatar.update_avatar_cache_if_expired(message.uid, avatar_url)
-
-        # 丢人
-        if not message.paid:
-            return
-
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
 
+        total_coin = message.r_price * message.gift_num
         data = {
             'id': message.msg_id,
-            'avatarUrl': avatar_url,
+            'avatarUrl': services.avatar.process_avatar_url(message.uface),
             'timestamp': message.timestamp,
             'authorName': message.uname,
-            'totalCoin': message.price * message.gift_num,
+            'totalCoin': 0 if not message.paid else total_coin,
+            'totalFreeCoin': 0 if message.paid else total_coin,
             'giftName': message.gift_name,
             'num': message.gift_num,
-            'uid': message.uid
+            # 给插件用的字段
+            'giftId': message.gift_id,
+            'giftIconUrl': message.gift_icon,
+            'uid': message.open_id,
+            'privilegeType': message.guard_level,
+            'medalLevel': 0 if not message.fans_medal_wearing_status else message.fans_medal_level,
+            'medalName': '' if not message.fans_medal_wearing_status else message.fans_medal_name,
         }
         room.send_cmd_data(api.chat.Command.ADD_GIFT, data)
         services.plugin.broadcast_cmd_data(
@@ -760,20 +827,23 @@ class LiveMsgHandler(blivedm.BaseHandler):
         )
 
     def _on_open_live_buy_guard(self, client: OpenLiveClient, message: dm_open_models.GuardBuyMessage):
-        avatar_url = message.user_info.uface
-        services.avatar.update_avatar_cache_if_expired(message.user_info.uid, avatar_url)
-
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
 
         data = {
             'id': message.msg_id,
-            'avatarUrl': avatar_url,
+            'avatarUrl': services.avatar.process_avatar_url(message.user_info.uface),
             'timestamp': message.timestamp,
             'authorName': message.user_info.uname,
             'privilegeType': message.guard_level,
-            'uid': message.user_info.uid
+            # 给插件用的字段
+            'num': message.guard_num,
+            'unit': message.guard_unit,
+            'total_coin': message.price * message.guard_num,
+            'uid': message.user_info.open_id,
+            'medalLevel': 0 if not message.fans_medal_wearing_status else message.fans_medal_level,
+            'medalName': '' if not message.fans_medal_wearing_status else message.fans_medal_name,
         }
         room.send_cmd_data(api.chat.Command.ADD_MEMBER, data)
         services.plugin.broadcast_cmd_data(
@@ -781,9 +851,6 @@ class LiveMsgHandler(blivedm.BaseHandler):
         )
 
     def _on_open_live_super_chat(self, client: OpenLiveClient, message: dm_open_models.SuperChatMessage):
-        avatar_url = services.avatar.process_avatar_url(message.uface)
-        services.avatar.update_avatar_cache_if_expired(message.uid, avatar_url)
-
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
@@ -802,13 +869,17 @@ class LiveMsgHandler(blivedm.BaseHandler):
         msg_id = str(message.message_id)
         data = {
             'id': msg_id,
-            'avatarUrl': avatar_url,
+            'avatarUrl': services.avatar.process_avatar_url(message.uface),
             'timestamp': message.start_time,
             'authorName': message.uname,
             'price': message.rmb,
             'content': message.message,
             'translation': translation,
-            'uid': message.uid
+            # 给插件用的字段
+            'uid': message.open_id,
+            'privilegeType': message.guard_level,
+            'medalLevel': 0 if not message.fans_medal_wearing_status else message.fans_medal_level,
+            'medalName': '' if not message.fans_medal_wearing_status else message.fans_medal_name,
         }
         room.send_cmd_data(api.chat.Command.ADD_SUPER_CHAT, data)
         services.plugin.broadcast_cmd_data(
@@ -816,7 +887,7 @@ class LiveMsgHandler(blivedm.BaseHandler):
         )
 
         if need_translate:
-            asyncio.create_task(self._translate_and_response(
+            utils.async_io.create_task_with_ref(self._translate_and_response(
                 message.message, room.room_key, msg_id, services.translate.Priority.HIGH
             ))
 

@@ -1,3 +1,4 @@
+import { getBaseUrl } from '@/api/base'
 import * as chat from '.'
 import * as chatModels from './models'
 
@@ -25,6 +26,7 @@ export default class ChatClientRelay {
 
     this.websocket = null
     this.retryCount = 0
+    this.totalRetryCount = 0
     this.isDestroying = false
     this.receiveTimeoutTimerId = null
   }
@@ -40,12 +42,26 @@ export default class ChatClientRelay {
     }
   }
 
+  addDebugMsg(content) {
+    this.msgHandler.onDebugMsg(new chatModels.DebugMsg({ content }))
+  }
+
   wsConnect() {
     if (this.isDestroying) {
       return
     }
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${window.location.host}/api/chat`
+
+    this.addDebugMsg('Connecting')
+
+    let baseUrl = getBaseUrl()
+    if (baseUrl === null) {
+      this.addDebugMsg('No available endpoint')
+      window.setTimeout(() => this.onWsClose(), 0)
+      return
+    }
+    let url = baseUrl.replace(/^http(s?):/, 'ws$1:')
+    url += '/api/chat'
+
     this.websocket = new WebSocket(url)
     this.websocket.onopen = this.onWsOpen.bind(this)
     this.websocket.onclose = this.onWsClose.bind(this)
@@ -53,6 +69,8 @@ export default class ChatClientRelay {
   }
 
   onWsOpen() {
+    this.addDebugMsg('Connected and authenticating')
+
     this.websocket.send(JSON.stringify({
       cmd: COMMAND_JOIN_ROOM,
       data: {
@@ -73,16 +91,23 @@ export default class ChatClientRelay {
   }
 
   onReceiveTimeout() {
-    console.warn('接收消息超时')
     this.receiveTimeoutTimerId = null
+    console.warn('接收消息超时')
+    this.addDebugMsg('Receiving message timed out')
 
-    // 直接丢弃阻塞的websocket，不等onclose回调了
-    this.websocket.onopen = this.websocket.onclose = this.websocket.onmessage = null
-    this.websocket.close()
-    this.onWsClose()
+    if (this.websocket) {
+      if (this.websocket.onclose) {
+        window.setTimeout(() => this.onWsClose(), 0)
+      }
+      // 直接丢弃阻塞的websocket，不等onclose回调了
+      this.websocket.onopen = this.websocket.onclose = this.websocket.onmessage = null
+      this.websocket.close()
+    }
   }
 
   onWsClose() {
+    this.addDebugMsg('Disconnected')
+
     this.websocket = null
     if (this.receiveTimeoutTimerId) {
       window.clearTimeout(this.receiveTimeoutTimerId)
@@ -92,15 +117,32 @@ export default class ChatClientRelay {
     if (this.isDestroying) {
       return
     }
-    console.warn(`掉线重连中${++this.retryCount}`)
+    this.retryCount++
+    this.totalRetryCount++
+    console.warn(`掉线重连中 retryCount=${this.retryCount}, totalRetryCount=${this.totalRetryCount}`)
+
+    // 防止无限重连的保险措施。30次重连大概会断线500秒，应该够了
+    if (this.totalRetryCount > 30) {
+      this.stop()
+      let error = new chatModels.ChatClientFatalError(
+        chatModels.FATAL_ERROR_TYPE_TOO_MANY_RETRIES, 'The connection has lost too many times'
+      )
+      this.msgHandler.onFatalError(error)
+      return
+    }
+
+    this.addDebugMsg('Scheduling reconnection')
+
+    // 这边不用判断页面是否可见，因为发心跳包不是由定时器触发的，即使是不活动页面也不会心跳超时
     window.setTimeout(this.wsConnect.bind(this), this.getReconnectInterval())
   }
 
   getReconnectInterval() {
-    return Math.min(
-      1000 + ((this.retryCount - 1) * 2000),
-      10 * 1000
-    )
+    // 不用retryCount了，防止意外的连接成功，导致retryCount重置
+    let interval = Math.min(1000 + ((this.totalRetryCount - 1) * 2000), 20 * 1000)
+    // 加上随机延迟，防止同时请求导致雪崩
+    interval += Math.random() * 3000
+    return interval
   }
 
   onWsMessage(event) {
@@ -138,7 +180,9 @@ export default class ChatClientRelay {
         medalLevel: data[10],
         id: data[11],
         translation: data[12],
-        emoticon: emoticon
+        emoticon: emoticon,
+        uid: data[16],
+        medalName: data[17],
       })
       this.msgHandler.onAddText(data)
       break
@@ -172,6 +216,7 @@ export default class ChatClientRelay {
       break
     }
     case COMMAND_FATAL_ERROR: {
+      this.stop()
       let error = new chatModels.ChatClientFatalError(data.type, data.msg)
       this.msgHandler.onFatalError(error)
       break

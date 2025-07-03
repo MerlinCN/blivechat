@@ -143,6 +143,15 @@
           </el-tab-pane>
 
           <el-tab-pane :label="$t('home.advanced')">
+            <el-row>
+              <el-col :xs="24" :sm="8">
+                <el-tooltip :content="$t('home.showDebugMessagesTip')">
+                  <el-form-item :label="$t('home.showDebugMessages')">
+                    <el-switch v-model="form.showDebugMessages"></el-switch>
+                  </el-form-item>
+                </el-tooltip>
+              </el-col>
+            </el-row>
             <el-row :gutter="20">
               <el-col :xs="24" :sm="8">
                 <el-tooltip :content="$t('home.relayMessagesByServerTip')">
@@ -208,6 +217,10 @@
               <el-button type="primary" icon="el-icon-plus" @click="addEmoticon">{{$t('home.addEmoticon')}}</el-button>
             </p>
           </el-tab-pane>
+
+          <el-tab-pane :label="$t('home.template')" lazy>
+            <template-select v-model="form.templateUrl"></template-select>
+          </el-tab-pane>
         </el-tabs>
       </el-form>
     </p>
@@ -226,7 +239,7 @@
           </el-tooltip>
           <el-form-item>
             <el-button type="primary" :disabled="!roomUrl" @click="enterRoom">{{$t('home.enterRoom')}}</el-button>
-            <el-button @click="enterTestRoom">{{$t('home.enterTestRoom')}}</el-button>
+            <el-button @click="copyTestRoomUrl">{{$t('home.copyTestRoomUrl')}}</el-button>
             <el-button @click="exportConfig">{{$t('home.exportConfig')}}</el-button>
             <el-button @click="importConfig">{{$t('home.importConfig')}}</el-button>
           </el-form-item>
@@ -240,12 +253,14 @@
 import _ from 'lodash'
 import download from 'downloadjs'
 
+import TemplateSelect from './TemplateSelect'
 import { mergeConfig } from '@/utils'
 import * as mainApi from '@/api/main'
 import * as chatConfig from '@/api/chatConfig'
 
 export default {
   name: 'Home',
+  components: { TemplateSelect },
   data() {
     return {
       serverConfig: {
@@ -369,13 +384,14 @@ export default {
     enterRoom() {
       window.open(this.roomUrl, `room ${this.roomKeyValue}`, 'menubar=0,location=0,scrollbars=0,toolbar=0,width=600,height=600')
     },
-    enterTestRoom() {
-      window.open(this.getUnvalidatedRoomUrl(true), 'test room', 'menubar=0,location=0,scrollbars=0,toolbar=0,width=600,height=600')
+    copyTestRoomUrl() {
+      window.navigator.clipboard.writeText(this.getUnvalidatedRoomUrl(true))
     },
     getUnvalidatedRoomUrl(isTestRoom) {
       // 重要的字段放在前面，因为如果被截断就连接不了房间了
       let frontFields = {
-        roomKeyType: this.form.roomKeyType
+        roomKeyType: this.form.roomKeyType,
+        templateUrl: this.form.templateUrl,
       }
       let backFields = {
         lang: this.$i18n.locale,

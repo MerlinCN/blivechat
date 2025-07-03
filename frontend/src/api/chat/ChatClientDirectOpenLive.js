@@ -1,5 +1,4 @@
-import axios from 'axios'
-
+import { apiClient as axios, getBaseUrl } from '@/api/base'
 import * as chat from '.'
 import * as chatModels from './models'
 import * as base from './ChatClientOfficialBase'
@@ -14,8 +13,10 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
 
     this.roomOwnerAuthCode = roomOwnerAuthCode
 
+    this.boundEndGameBeforeUnload = this.endGameBeforeUnload.bind(this)
+
     // 调用initRoom后初始化
-    this.roomOwnerUid = null
+    this.roomOwnerOpenId = null
     this.hostServerUrlList = []
     this.authBody = null
     this.gameId = null
@@ -23,25 +24,22 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
     this.gameHeartbeatTimerId = null
   }
 
-  stop() {
-    super.stop()
+  start() {
+    super.start()
 
-    if (this.gameHeartbeatTimerId) {
-      window.clearInterval(this.gameHeartbeatTimerId)
-      this.gameHeartbeatTimerId = null
-    }
+    window.addEventListener('beforeunload', this.boundEndGameBeforeUnload)
+  }
+
+  stop() {
+    window.removeEventListener('beforeunload', this.boundEndGameBeforeUnload)
+
     this.endGame()
+
+    super.stop()
   }
 
   async initRoom() {
-    if (!await this.startGame()) {
-      return false
-    }
-
-    if (this.gameId && this.gameHeartbeatTimerId === null) {
-      this.gameHeartbeatTimerId = window.setInterval(this.sendGameHeartbeat.bind(this), GAME_HEARTBEAT_INTERVAL)
-    }
-    return true
+    return this.startGame()
   }
 
   async startGame() {
@@ -56,11 +54,16 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
         if (res.code === 7007) {
           // 身份码错误
           throw new chatModels.ChatClientFatalError(chatModels.FATAL_ERROR_TYPE_AUTH_CODE_ERROR, msg)
+        } else if (res.code === 7010) {
+          // 同一个房间连接数超过上限
+          throw new chatModels.ChatClientFatalError(chatModels.FATAL_ERROR_TYPE_TOO_MANY_CONNECTIONS, msg)
         }
-        throw Error(msg)
+        throw new Error(msg)
       }
     } catch (e) {
       console.error('startGame failed:', e)
+      this.addDebugMsg(`Failed to start Open Live session: ${e}`)
+
       if (e instanceof chatModels.ChatClientFatalError) {
         throw e
       }
@@ -74,32 +77,66 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
     this.hostServerUrlList = websocketInfo.wss_link
     let anchorInfo = data.anchor_info
     // this.roomId = anchorInfo.room_id
-    this.roomOwnerUid = anchorInfo.uid
+    this.roomOwnerOpenId = anchorInfo.open_id
     return true
   }
 
   async endGame() {
+    this.addDebugMsg('Ending Open Live session')
+
+    this.needInitRoom = true
     if (!this.gameId) {
       return true
     }
+    let gameId = this.gameId
+    // 直接丢弃将要关闭的gameId
+    this.gameId = null
 
     try {
       let res = (await axios.post('/api/open_live/end_game', {
         app_id: 0,
-        game_id: this.gameId
+        game_id: gameId
       })).data
-      if (res.code !== 0) {
-        if (res.code === 7000 || res.code === 7003) {
-          // 项目已经关闭了也算成功
-          return true
-        }
-        throw Error(`code=${res.code}, message=${res.message}, request_id=${res.request_id}`)
+      // 项目已经关闭了也算成功
+      if ([0, 7000, 7003].indexOf(res.code) === -1) {
+        throw new Error(`code=${res.code}, message=${res.message}, request_id=${res.request_id}`)
       }
     } catch (e) {
       console.error('endGame failed:', e)
+      this.addDebugMsg(`Failed to end Open Live session: ${e}`)
       return false
     }
     return true
+  }
+
+  endGameBeforeUnload() {
+    let baseUrl = getBaseUrl()
+    if (baseUrl === null) {
+      return
+    }
+
+    this.needInitRoom = true
+    if (!this.gameId) {
+      return
+    }
+    let gameId = this.gameId
+    // 直接丢弃将要关闭的gameId
+    this.gameId = null
+
+    let url = `${baseUrl}/api/open_live/end_game`
+    let body = {
+      app_id: 0,
+      game_id: gameId
+    }
+    body = new Blob([JSON.stringify(body)], { type: 'application/json' })
+    window.navigator.sendBeacon(url, body)
+  }
+
+  onSendGameHeartbeat() {
+    // 加上随机延迟，减少同时请求的概率
+    let sleepTime = GAME_HEARTBEAT_INTERVAL - (2 * 1000) + (Math.random() * 3 * 1000)
+    this.gameHeartbeatTimerId = window.setTimeout(this.onSendGameHeartbeat.bind(this), sleepTime)
+    this.sendGameHeartbeat()
   }
 
   async sendGameHeartbeat() {
@@ -110,33 +147,36 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
     // 保存一下，防止await之后gameId改变
     let gameId = this.gameId
     try {
-      let res = (await axios.post('/api/open_live/game_heartbeat', {
-        game_id: this.gameId
-      })).data
+      let res = (await axios.post(
+        '/api/open_live/game_heartbeat',
+        { game_id: gameId },
+        // 服务器有心跳合批，超时时间应该长一点
+        { timeout: 15 * 1000 }
+      )).data
       if (res.code !== 0) {
-        console.error(`sendGameHeartbeat failed: code=${res.code}, message=${res.message}, request_id=${res.request_id}`)
-
         if (res.code === 7003 && this.gameId === gameId) {
           // 项目异常关闭，可能是心跳超时，需要重新开启项目
+          this.gameId = null
           this.needInitRoom = true
           this.discardWebsocket()
         }
-
-        return false
+        throw new Error(`code=${res.code}, message=${res.message}, request_id=${res.request_id}`)
       }
     } catch (e) {
       console.error('sendGameHeartbeat failed:', e)
+      this.addDebugMsg(`Failed to send Open Live heartbeat: ${e}`)
       return false
     }
     return true
   }
 
   async onBeforeWsConnect() {
-    // 重连次数太多则重新init_room，保险
+    // 重连次数太多则重新initRoom，保险
     let reinitPeriod = Math.max(3, (this.hostServerUrlList || []).length)
     if (this.retryCount > 0 && this.retryCount % reinitPeriod === 0) {
-      this.needInitRoom = true
+      await this.endGame()
     }
+
     return super.onBeforeWsConnect()
   }
 
@@ -144,20 +184,66 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
     return this.hostServerUrlList[this.retryCount % this.hostServerUrlList.length]
   }
 
+  onWsOpen() {
+    super.onWsOpen()
+
+    if (this.gameId && this.gameHeartbeatTimerId === null) {
+      this.gameHeartbeatTimerId = window.setTimeout(this.onSendGameHeartbeat.bind(this), GAME_HEARTBEAT_INTERVAL)
+    }
+  }
+
   sendAuth() {
     this.websocket.send(this.makePacket(this.authBody, base.OP_AUTH))
   }
 
-  async dmCallback(command) {
+  onWsClose() {
+    if (this.gameHeartbeatTimerId) {
+      window.clearTimeout(this.gameHeartbeatTimerId)
+      this.gameHeartbeatTimerId = null
+    }
+
+    super.onWsClose()
+  }
+
+  delayReconnect() {
+    if (document.visibilityState !== 'visible') {
+      // 不知道什么时候才能重连，先endGame吧
+      this.endGame()
+    }
+
+    super.delayReconnect()
+  }
+
+  interactionEndCallback(command) {
+    if (command.data.game_id !== this.gameId) {
+      return
+    }
+    // 服务器主动停止推送，可能是心跳超时，需要重新开启项目
+    console.error(`Open Live session end by server, gameId=${this.gameId}`)
+    this.addDebugMsg('Open Live session end by server')
+
+    this.gameId = null
+    this.needInitRoom = true
+    this.discardWebsocket()
+  }
+
+  dmCallback(command) {
     let data = command.data
 
     let authorType
-    if (data.uid === this.roomOwnerUid) {
+    if (data.open_id === this.roomOwnerOpenId) {
       authorType = 3
+    } else if (data.is_admin) {
+      authorType = 2
     } else if (data.guard_level !== 0) {
       authorType = 1
     } else {
       authorType = 0
+    }
+
+    let showContent = data.msg
+    if (data.reply_uname !== '') {
+      showContent = `@${data.reply_uname} ${showContent}`
     }
 
     let emoticon = null
@@ -170,42 +256,57 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
       timestamp: data.timestamp,
       authorName: data.uname,
       authorType: authorType,
-      content: data.msg,
+      content: showContent,
       privilegeType: data.guard_level,
       isGiftDanmaku: chat.isGiftDanmakuByContent(data.msg),
       medalLevel: data.fans_medal_wearing_status ? data.fans_medal_level : 0,
       id: data.msg_id,
       emoticon: emoticon,
+      // 给模板用的字段
+      uid: data.open_id,
+      medalName: data.fans_medal_wearing_status ? data.fans_medal_name : '',
     })
     this.msgHandler.onAddText(data)
   }
 
   sendGiftCallback(command) {
     let data = command.data
-    if (!data.paid) { // 丢人
-      return
-    }
-
+    let totalCoin = data.r_price * data.gift_num
     data = new chatModels.AddGiftMsg({
       id: data.msg_id,
       avatarUrl: chat.processAvatarUrl(data.uface),
       timestamp: data.timestamp,
       authorName: data.uname,
-      totalCoin: data.price * data.gift_num,
+      totalCoin: data.paid ? totalCoin : 0,
+      totalFreeCoin: !data.paid ? totalCoin : 0,
       giftName: data.gift_name,
-      num: data.gift_num
+      num: data.gift_num,
+      // 给模板用的字段
+      giftId: data.gift_id,
+      giftIconUrl: data.gift_icon,
+      uid: data.open_id,
+      privilegeType: data.guard_level,
+      medalLevel: data.fans_medal_wearing_status ? data.fans_medal_level : 0,
+      medalName: data.fans_medal_wearing_status ? data.fans_medal_name : '',
     })
     this.msgHandler.onAddGift(data)
   }
 
-  async guardCallback(command) {
+  guardCallback(command) {
     let data = command.data
     data = new chatModels.AddMemberMsg({
       id: data.msg_id,
       avatarUrl: chat.processAvatarUrl(data.user_info.uface),
       timestamp: data.timestamp,
       authorName: data.user_info.uname,
-      privilegeType: data.guard_level
+      privilegeType: data.guard_level,
+      // 给模板用的字段
+      num: data.guard_num,
+      unit: data.guard_unit,
+      total_coin: data.price * data.guard_num,
+      uid: data.user_info.open_id,
+      medalLevel: data.fans_medal_wearing_status ? data.fans_medal_level : 0,
+      medalName: data.fans_medal_wearing_status ? data.fans_medal_name : '',
     })
     this.msgHandler.onAddMember(data)
   }
@@ -219,6 +320,11 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
       authorName: data.uname,
       price: data.rmb,
       content: data.message,
+      // 给模板用的字段
+      uid: data.open_id,
+      privilegeType: data.guard_level,
+      medalLevel: data.fans_medal_wearing_status ? data.fans_medal_level : 0,
+      medalName: data.fans_medal_wearing_status ? data.fans_medal_name : '',
     })
     this.msgHandler.onAddSuperChat(data)
   }
@@ -234,6 +340,7 @@ export default class ChatClientDirectOpenLive extends ChatClientOfficialBase {
 }
 
 const CMD_CALLBACK_MAP = {
+  LIVE_OPEN_PLATFORM_INTERACTION_END: ChatClientDirectOpenLive.prototype.interactionEndCallback,
   LIVE_OPEN_PLATFORM_DM: ChatClientDirectOpenLive.prototype.dmCallback,
   LIVE_OPEN_PLATFORM_SEND_GIFT: ChatClientDirectOpenLive.prototype.sendGiftCallback,
   LIVE_OPEN_PLATFORM_GUARD: ChatClientDirectOpenLive.prototype.guardCallback,

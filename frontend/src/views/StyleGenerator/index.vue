@@ -2,11 +2,11 @@
   <el-row :gutter="20">
     <el-col :sm="24" :md="16">
       <el-tabs v-model="activeTab">
-        <el-tab-pane :label="$t('stylegen.legacy')" name="legacy">
-          <legacy ref="legacy" v-model="subComponentResults.legacy"></legacy>
-        </el-tab-pane>
         <el-tab-pane :label="$t('stylegen.lineLike')" name="lineLike">
           <line-like ref="lineLike" v-model="subComponentResults.lineLike"></line-like>
+        </el-tab-pane>
+        <el-tab-pane :label="$t('stylegen.legacy')" name="legacy">
+          <legacy ref="legacy" v-model="subComponentResults.legacy"></legacy>
         </el-tab-pane>
       </el-tabs>
 
@@ -18,6 +18,9 @@
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="copyResult">{{ $t('stylegen.copy') }}</el-button>
+            <a target="_blank" href="https://vscode.dev/">
+              <el-button style="margin: 0 10px">{{ $t('stylegen.editor') }}</el-button>
+            </a>
             <el-button @click="resetConfig">{{ $t('stylegen.resetConfig') }}</el-button>
           </el-form-item>
         </el-card>
@@ -25,7 +28,7 @@
     </el-col>
 
     <el-col :sm="24" :md="8">
-      <div :style="{ position: 'relative', top: `${exampleTop}px` }">
+      <div id="example-panel">
         <el-form inline style="line-height: 40px">
           <el-form-item :label="$t('stylegen.playAnimation')" style="margin: 0">
             <el-switch v-model="playAnimation" @change="setExampleRoomClientStart"></el-switch>
@@ -35,9 +38,7 @@
           </el-form-item>
         </el-form>
         <div id="example-container" :class="{ light: exampleBgLight }">
-          <iframe id="example-room-iframe" ref="exampleRoomIframe"
-            :src="exampleRoomUrl" frameborder="0" @load="onExampleRoomLoad"
-          ></iframe>
+          <iframe id="example-room-iframe" ref="exampleRoomIframe" :src="exampleRoomUrl" frameborder="0"></iframe>
         </div>
       </div>
     </el-col>
@@ -63,15 +64,14 @@ export default {
         legacy: '',
         lineLike: ''
       },
-      activeTab: 'legacy',
+      activeTab: 'lineLike',
       // 输入框的结果
       inputResult: '',
       // 防抖后延迟变化的结果
       debounceResult: '',
 
-      exampleTop: 0,
       playAnimation: true,
-      exampleBgLight: false
+      exampleBgLight: true,
     }
   },
   computed: {
@@ -95,33 +95,40 @@ export default {
   mounted() {
     this.debounceResult = this.inputResult = this.subComponentResult
 
-    this.$parent.$el.addEventListener('scroll', this.onParentScroll)
+    window.addEventListener('message', this.onWindowMessage)
   },
   beforeDestroy() {
-    this.$parent.$el.removeEventListener('scroll', this.onParentScroll)
+    window.removeEventListener('message', this.onWindowMessage)
   },
   methods: {
-    onParentScroll(event) {
-      if (document.body.clientWidth <= 992) {
-        this.exampleTop = 0
-      } else {
-        this.exampleTop = event.target.scrollTop
+    sendMessageToExampleRoom(type, data = null) {
+      let msg = { type, data }
+      this.$refs.exampleRoomIframe.contentWindow.postMessage(msg, window.location.origin)
+    },
+    // 处理房间发送的消息
+    onWindowMessage(event) {
+      if (event.source !== this.$refs.exampleRoomIframe.contentWindow) {
+        return
+      }
+      if (event.origin !== window.location.origin) {
+        console.warn(`消息origin错误，${event.origin} != ${window.location.origin}`)
+        return
+      }
+
+      let { type } = event.data
+      switch (type) {
+      case 'stylegenExampleRoomLoad':
+        this.setExampleRoomCustomCss(this.debounceResult)
+        this.setExampleRoomClientStart(this.playAnimation)
+        break
       }
     },
 
-    onExampleRoomLoad() {
-      this.setExampleRoomCustomCss(this.debounceResult)
-      this.setExampleRoomClientStart(this.playAnimation)
-    },
     setExampleRoomCustomCss(css) {
       this.sendMessageToExampleRoom('roomSetCustomStyle', { css })
     },
     setExampleRoomClientStart(isStart) {
       this.sendMessageToExampleRoom(isStart ? 'roomStartClient' : 'roomStopClient')
-    },
-    sendMessageToExampleRoom(type, data = null) {
-      let msg = { type, data }
-      this.$refs.exampleRoomIframe.contentWindow.postMessage(msg, window.location.origin)
     },
 
     copyResult() {
@@ -137,6 +144,13 @@ export default {
 </script>
 
 <style scoped>
+@media only screen and (min-width: 992px) {
+  #example-panel {
+    position: fixed;
+    width: calc((100vw - 230px - 40px) / 3 - 20px);
+  }
+}
+
 #example-container {
   height: calc(100vh - 150px);
 
